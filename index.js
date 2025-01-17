@@ -32,7 +32,9 @@ const replacePercentWithSpace = (str) => {
 const updateQRISAmount = (qrisCode, amount) => {
   const amountIndex = qrisCode.indexOf('5204') + 4;
   const formattedAmount = amount.toString().padStart(13, '0');
-  return qrisCode.substring(0, amountIndex) + formattedAmount + qrisCode.substring(amountIndex + 13);
+  const updatedQRIS = qrisCode.substring(0, amountIndex) + formattedAmount + qrisCode.substring(amountIndex + 13);
+  const crc16 = convertCRC16(updatedQRIS);
+  return updatedQRIS + crc16;
 };
 
 // Format jumlah menjadi format IDR
@@ -87,8 +89,7 @@ app.get('/api/create', async (req, res) => {
       });
     }
 
-    const crc16 = convertCRC16(qrisCode);
-    const dynamicQRIS = updateQRISAmount(qrisCode, numericAmount) + crc16;
+    const dynamicQRIS = updateQRISAmount(qrisCode, numericAmount);
     const qrBase64 = await QRCode.toDataURL(dynamicQRIS);
 
     const qrId = Date.now().toString(36) + Math.random().toString(36).substr(2);
@@ -104,7 +105,7 @@ app.get('/api/create', async (req, res) => {
         amount: numericAmount,
         formatted_amount: formatIDR(numericAmount).replace('Rp\u00a0', 'Rp '),
         generated_at: formatIndonesianDateTime(now),
-        download_url: `https://memek-gamma.vercel.app/api/download/${qrId}`
+        download_url: `http://localhost:${port}/api/download/${qrId}`
       }
     });
   } catch (error) {
@@ -138,3 +139,4 @@ app.get('/api/download/:id', (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+
