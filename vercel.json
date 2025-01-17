@@ -8,7 +8,7 @@
   ],
   "routes": [
     {
-      "src": "/downloads/(.*)",
+      "src": "downloads/(.*)",
       "dest": "downloads/$1"
     },
     {
