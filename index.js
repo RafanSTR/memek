@@ -56,7 +56,7 @@ function cleanupFile(filePath) {
 }
 
 // Serve static files from the downloads directory
-app.use('/downloads', express.static(downloadsDir));
+app.use('downloads', express.static(downloadsDir));
 
 app.get('/api/create', async (req, res) => {
   try {
