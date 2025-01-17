@@ -76,9 +76,10 @@ const updateQRISAmount = (qrisCode, amount) => {
 
 app.get('/api/create', async (req, res) => {
   try {
+    // Parsing request params
     let { amount, qrisCode } = req.query;
 
-    // Ganti % dengan spasi setelah decoding URL
+    // Mengganti % menjadi spasi setelah decoding URL
     if (amount) {
       amount = replacePercentWithSpace(amount);
     }
@@ -125,7 +126,7 @@ app.get('/api/create', async (req, res) => {
         amount: numericAmount,
         formatted_amount: formatIDR(numericAmount).replace('Rp\u00a0', 'Rp '),
         generated_at: formatIndonesianDateTime(now),
-        download_url: `https://memek-gamma.vercel.app/api/download/${qrId}` // URL untuk download
+        download_url: `http://localhost:${port}/api/download/${qrId}` // URL untuk download
       }
     });
   } catch (error) {
