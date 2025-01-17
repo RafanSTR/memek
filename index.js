@@ -8,47 +8,34 @@ function charCodeAt(str, i) {
 }
 
 function convertCRC16(str) {
-  let crc = 0xFFFF; // Inisialisasi CRC dengan nilai awal
-  const strlen = str.length; // Panjang string input
-  
-  for (let c = 0; c < strlen; c++) {
-    crc ^= charCodeAt(str, c) << 8; // XOR byte karakter dengan CRC
+  let crc = 0xFFFF;
+  for (let c = 0; c < str.length; c++) {
+    crc ^= charCodeAt(str, c) << 8;
     for (let i = 0; i < 8; i++) {
       if (crc & 0x8000) {
-        // Jika bit tertinggi adalah 1, lakukan XOR dengan polinomial 0x1021
         crc = (crc << 1) ^ 0x1021;
       } else {
-        // Jika tidak, cukup shift ke kiri
         crc = crc << 1;
       }
     }
   }
-  
-  // Konversi CRC menjadi nilai hex dan pastikan panjangnya selalu 4 karakter
   return (crc & 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
 }
 
-// Fungsi untuk mengganti % dengan spasi setelah decoding URL
+// Fungsi untuk mengganti % menjadi spasi setelah decoding URL
 const replacePercentWithSpace = (str) => {
-  // Decode URL terlebih dahulu, baru ganti %
   const decodedStr = decodeURIComponent(str);
-  return decodedStr.replace(/%/g, ' '); // Gantikan % dengan spasi
+  return decodedStr.replace(/%/g, ' ');
 };
 
-const app = express();
-const port = process.env.PORT || 3000;
+// Fungsi untuk memperbarui jumlah dalam QRIS
+const updateQRISAmount = (qrisCode, amount) => {
+  const amountIndex = qrisCode.indexOf('5204') + 4;
+  const formattedAmount = amount.toString().padStart(13, '0');
+  return qrisCode.substring(0, amountIndex) + formattedAmount + qrisCode.substring(amountIndex + 13);
+};
 
-const qrStorage = new Map();
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of qrStorage.entries()) {
-    if (now >= value.expiresAt) {
-      qrStorage.delete(key);
-    }
-  }
-}, 60000);
-
+// Format jumlah menjadi format IDR
 const formatIDR = (amount) => {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -58,35 +45,32 @@ const formatIDR = (amount) => {
   }).format(amount);
 };
 
-// Format date in Indonesian
+// Format tanggal ke bahasa Indonesia
 const formatIndonesianDateTime = (date) => {
   moment.locale('id');
-  return moment(date)
-    .tz('Asia/Jakarta')
-    .format('dddd, D MMMM YYYY [pukul] HH.mm.ss [WIB]');
+  return moment(date).tz('Asia/Jakarta').format('dddd, D MMMM YYYY [pukul] HH.mm.ss [WIB]');
 };
 
-const updateQRISAmount = (qrisCode, amount) => {
-  const amountIndex = qrisCode.indexOf('5204') + 4;
-  const formattedAmount = amount.toString().padStart(13, '0');
-  return qrisCode.substring(0, amountIndex) + 
-         formattedAmount + 
-         qrisCode.substring(amountIndex + 13);
-};
+const app = express();
+const port = process.env.PORT || 3000;
+const qrStorage = new Map();
+
+// Interval untuk menghapus QR yang telah kadaluarsa
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of qrStorage.entries()) {
+    if (now >= value.expiresAt) {
+      qrStorage.delete(key);
+    }
+  }
+}, 60000);
 
 app.get('/api/create', async (req, res) => {
   try {
-    // Parsing request params
     let { amount, qrisCode } = req.query;
 
-    // Mengganti % menjadi spasi setelah decoding URL
-    if (amount) {
-      amount = replacePercentWithSpace(amount);
-    }
-
-    if (qrisCode) {
-      qrisCode = replacePercentWithSpace(qrisCode);
-    }
+    if (amount) amount = replacePercentWithSpace(amount);
+    if (qrisCode) qrisCode = replacePercentWithSpace(qrisCode);
 
     if (!amount || !qrisCode) {
       return res.status(400).json({
@@ -103,22 +87,16 @@ app.get('/api/create', async (req, res) => {
       });
     }
 
-    // Convert amount to CRC16 and add CRC16 to qrisCode
     const crc16 = convertCRC16(qrisCode);
     const dynamicQRIS = updateQRISAmount(qrisCode, numericAmount) + crc16;
-    
     const qrBase64 = await QRCode.toDataURL(dynamicQRIS);
-    
+
     const qrId = Date.now().toString(36) + Math.random().toString(36).substr(2);
-    
-    const expiresAt = Date.now() + (5 * 60 * 1000); // 5 minutes
-    qrStorage.set(qrId, {
-      data: qrBase64,
-      expiresAt
-    });
+    const expiresAt = Date.now() + 5 * 60 * 1000;
+
+    qrStorage.set(qrId, { data: qrBase64, expiresAt });
 
     const now = new Date();
-    
     res.json({
       status: 'success',
       timestamp: now.toISOString(),
@@ -126,7 +104,7 @@ app.get('/api/create', async (req, res) => {
         amount: numericAmount,
         formatted_amount: formatIDR(numericAmount).replace('Rp\u00a0', 'Rp '),
         generated_at: formatIndonesianDateTime(now),
-        download_url: `https://memek-gamma.vercel.app/api/download/${qrId}` // URL untuk download
+        download_url: `http://localhost:${port}/api/download/${qrId}`
       }
     });
   } catch (error) {
