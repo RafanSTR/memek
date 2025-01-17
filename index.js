@@ -2,8 +2,14 @@ const express = require('express');
 const QRCode = require('qrcode');
 const { format } = require('date-fns');
 const { id } = require('date-fns/locale');
+const fs = require('fs-extra');
+const path = require('path');
 
 const app = express();
+
+// Create downloads directory if it doesn't exist
+const downloadsDir = path.join(__dirname, 'downloads');
+fs.ensureDirSync(downloadsDir);
 
 function charCodeAt(str, i) {
   return str.charCodeAt(i);
@@ -38,6 +44,20 @@ function formatCurrency(amount) {
   }).format(amount);
 }
 
+function cleanupFile(filePath) {
+  setTimeout(async () => {
+    try {
+      await fs.remove(filePath);
+      console.log(`Cleaned up file: ${filePath}`);
+    } catch (error) {
+      console.error(`Error cleaning up file: ${filePath}`, error);
+    }
+  }, 5 * 60 * 1000); // 5 minutes
+}
+
+// Serve static files from the downloads directory
+app.use('/downloads', express.static(downloadsDir));
+
 app.get('/api/create', async (req, res) => {
   try {
     const { amount, qrisCode } = req.query;
@@ -67,9 +87,16 @@ app.get('/api/create', async (req, res) => {
     // Add CRC16
     const finalQris = newQris + convertCRC16(newQris);
 
-    // Generate QR code
-    const qrImageBuffer = await QRCode.toBuffer(finalQris);
-    const qrBase64 = qrImageBuffer.toString('base64');
+    // Generate unique filename
+    const timestamp = Date.now();
+    const filename = `qris_${timestamp}.png`;
+    const filePath = path.join(downloadsDir, filename);
+
+    // Generate QR code and save to file
+    await QRCode.toFile(filePath, finalQris);
+
+    // Schedule cleanup
+    cleanupFile(filePath);
     
     // Get current timestamp
     const now = new Date();
@@ -79,6 +106,12 @@ app.get('/api/create', async (req, res) => {
       locale: id
     });
 
+    // Generate download URL
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}`
+      : `http://localhost:${process.env.PORT || 3000}`;
+    const downloadUrl = `${baseUrl}/downloads/${filename}`;
+
     res.json({
       status: 'success',
       timestamp: now.toISOString(),
@@ -86,8 +119,7 @@ app.get('/api/create', async (req, res) => {
         amount: parseInt(amount),
         formatted_amount: formatCurrency(amount),
         generated_at: formattedDate,
-        qris_content: finalQris,
-        qr_image: `data:image/png;base64,${qrBase64}`
+        download_url: downloadUrl
       }
     });
 
