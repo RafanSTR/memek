@@ -3,14 +3,10 @@ const moment = require('moment-timezone');
 const QRCode = require('qrcode');
 
 // Fungsi untuk menghitung CRC16
-function charCodeAt(str, i) {
-  return str.charCodeAt(i);
-}
-
 function convertCRC16(str) {
   let crc = 0xFFFF;
   for (let c = 0; c < str.length; c++) {
-    crc ^= charCodeAt(str, c) << 8;
+    crc ^= str.charCodeAt(c) << 8;
     for (let i = 0; i < 8; i++) {
       if (crc & 0x8000) {
         crc = (crc << 1) ^ 0x1021;
@@ -30,11 +26,24 @@ const replacePercentWithSpace = (str) => {
 
 // Fungsi untuk memperbarui jumlah dalam QRIS
 const updateQRISAmount = (qrisCode, amount) => {
-  const amountIndex = qrisCode.indexOf('5204') + 4;
-  const formattedAmount = amount.toString().padStart(13, '0');
-  const updatedQRIS = qrisCode.substring(0, amountIndex) + formattedAmount + qrisCode.substring(amountIndex + 13);
-  const crc16 = convertCRC16(updatedQRIS);
-  return updatedQRIS + crc16;
+  const amountIndex = qrisCode.indexOf('54');
+  if (amountIndex === -1) {
+    throw new Error("Invalid QRIS format: '54' tag not found.");
+  }
+
+  const amountTagLength = 6; // '54' tag length + 2 for its length (e.g., '5408')
+  const newAmount = amount.toFixed(2).toString().replace('.', '');
+  const updatedQRIS = qrisCode.substring(0, amountIndex + amountTagLength) + newAmount + qrisCode.substring(amountIndex + amountTagLength + newAmount.length);
+
+  // Hapus CRC16 lama jika ada
+  const crcIndex = updatedQRIS.lastIndexOf('6304');
+  if (crcIndex === -1) {
+    throw new Error("Invalid QRIS format: '6304' tag not found.");
+  }
+
+  const qrisWithoutCRC = updatedQRIS.substring(0, crcIndex + 4);
+  const crc16 = convertCRC16(qrisWithoutCRC);
+  return qrisWithoutCRC + crc16;
 };
 
 // Format jumlah menjadi format IDR
@@ -81,7 +90,7 @@ app.get('/api/create', async (req, res) => {
       });
     }
 
-    const numericAmount = parseInt(amount, 10);
+    const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
       return res.status(400).json({
         status: 'error',
@@ -109,10 +118,10 @@ app.get('/api/create', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error:', error.message);
     res.status(500).json({
       status: 'error',
-      message: 'Internal server error'
+      message: error.message
     });
   }
 });
