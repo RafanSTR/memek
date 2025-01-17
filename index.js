@@ -2,17 +2,44 @@ const express = require('express');
 const moment = require('moment-timezone');
 const QRCode = require('qrcode');
 
+// Fungsi untuk menghitung CRC16
+function charCodeAt(str, i) {
+  return str.charCodeAt(i);
+}
+
+function convertCRC16(str) {
+  let crc = 0xFFFF; // Inisialisasi CRC dengan nilai awal
+  const strlen = str.length; // Panjang string input
+  
+  for (let c = 0; c < strlen; c++) {
+    crc ^= charCodeAt(str, c) << 8; // XOR byte karakter dengan CRC
+    for (let i = 0; i < 8; i++) {
+      if (crc & 0x8000) {
+        // Jika bit tertinggi adalah 1, lakukan XOR dengan polinomial 0x1021
+        crc = (crc << 1) ^ 0x1021;
+      } else {
+        // Jika tidak, cukup shift ke kiri
+        crc = crc << 1;
+      }
+    }
+  }
+  
+  // Konversi CRC menjadi nilai hex dan pastikan panjangnya selalu 4 karakter
+  return (crc & 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
+}
+
+// Fungsi untuk mengganti % dengan spasi setelah decoding URL
+const replacePercentWithSpace = (str) => {
+  // Decode URL terlebih dahulu, baru ganti %
+  const decodedStr = decodeURIComponent(str);
+  return decodedStr.replace(/%/g, ' '); // Gantikan % dengan spasi
+};
+
 const app = express();
 const port = process.env.PORT || 3000;
 
 const qrStorage = new Map();
 
-// Fungsi untuk mengganti % dengan spasi
-const replacePercentWithSpace = (str) => {
-  return str.replace(/%/g, ' ');
-};
-
-// Menghapus QR yang sudah expired setiap menit
 setInterval(() => {
   const now = Date.now();
   for (const [key, value] of qrStorage.entries()) {
@@ -22,7 +49,6 @@ setInterval(() => {
   }
 }, 60000);
 
-// Format IDR
 const formatIDR = (amount) => {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -32,7 +58,7 @@ const formatIDR = (amount) => {
   }).format(amount);
 };
 
-// Format tanggal dan waktu dalam bahasa Indonesia
+// Format date in Indonesian
 const formatIndonesianDateTime = (date) => {
   moment.locale('id');
   return moment(date)
@@ -40,7 +66,6 @@ const formatIndonesianDateTime = (date) => {
     .format('dddd, D MMMM YYYY [pukul] HH.mm.ss [WIB]');
 };
 
-// Update jumlah dalam QRIS code
 const updateQRISAmount = (qrisCode, amount) => {
   const amountIndex = qrisCode.indexOf('5204') + 4;
   const formattedAmount = amount.toString().padStart(13, '0');
@@ -49,12 +74,11 @@ const updateQRISAmount = (qrisCode, amount) => {
          qrisCode.substring(amountIndex + 13);
 };
 
-// Route untuk membuat QRIS dan QR Code
 app.get('/api/create', async (req, res) => {
   try {
     let { amount, qrisCode } = req.query;
 
-    // Ganti % dengan spasi
+    // Ganti % dengan spasi setelah decoding URL
     if (amount) {
       amount = replacePercentWithSpace(amount);
     }
@@ -62,7 +86,7 @@ app.get('/api/create', async (req, res) => {
     if (qrisCode) {
       qrisCode = replacePercentWithSpace(qrisCode);
     }
-    
+
     if (!amount || !qrisCode) {
       return res.status(400).json({
         status: 'error',
@@ -78,7 +102,9 @@ app.get('/api/create', async (req, res) => {
       });
     }
 
-    const dynamicQRIS = updateQRISAmount(qrisCode, numericAmount);
+    // Convert amount to CRC16 and add CRC16 to qrisCode
+    const crc16 = convertCRC16(qrisCode);
+    const dynamicQRIS = updateQRISAmount(qrisCode, numericAmount) + crc16;
     
     const qrBase64 = await QRCode.toDataURL(dynamicQRIS);
     
@@ -99,7 +125,7 @@ app.get('/api/create', async (req, res) => {
         amount: numericAmount,
         formatted_amount: formatIDR(numericAmount).replace('Rp\u00a0', 'Rp '),
         generated_at: formatIndonesianDateTime(now),
-        download_url: `http://localhost:${port}/api/download/${qrId}` // URL untuk download
+        download_url: `https://memek-gamma.vercel.app/api/download/${qrId}` // URL untuk download
       }
     });
   } catch (error) {
@@ -111,7 +137,6 @@ app.get('/api/create', async (req, res) => {
   }
 });
 
-// Route untuk mendownload QR Code
 app.get('/api/download/:id', (req, res) => {
   const { id } = req.params;
   const qrData = qrStorage.get(id);
@@ -131,7 +156,6 @@ app.get('/api/download/:id', (req, res) => {
   res.send(imageBuffer);
 });
 
-// Mulai server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
