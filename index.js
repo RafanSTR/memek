@@ -5,10 +5,14 @@ const QRCode = require('qrcode');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// In-memory storage for QR codes with TTL
 const qrStorage = new Map();
 
-// Cleanup expired QR codes every minute
+// Fungsi untuk mengganti % dengan spasi
+const replacePercentWithSpace = (str) => {
+  return str.replace(/%/g, ' ');
+};
+
+// Menghapus QR yang sudah expired setiap menit
 setInterval(() => {
   const now = Date.now();
   for (const [key, value] of qrStorage.entries()) {
@@ -18,7 +22,7 @@ setInterval(() => {
   }
 }, 60000);
 
-// Format currency to IDR
+// Format IDR
 const formatIDR = (amount) => {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -28,7 +32,7 @@ const formatIDR = (amount) => {
   }).format(amount);
 };
 
-// Format date in Indonesian
+// Format tanggal dan waktu dalam bahasa Indonesia
 const formatIndonesianDateTime = (date) => {
   moment.locale('id');
   return moment(date)
@@ -36,7 +40,7 @@ const formatIndonesianDateTime = (date) => {
     .format('dddd, D MMMM YYYY [pukul] HH.mm.ss [WIB]');
 };
 
-// Update QRIS amount
+// Update jumlah dalam QRIS code
 const updateQRISAmount = (qrisCode, amount) => {
   const amountIndex = qrisCode.indexOf('5204') + 4;
   const formattedAmount = amount.toString().padStart(13, '0');
@@ -45,9 +49,19 @@ const updateQRISAmount = (qrisCode, amount) => {
          qrisCode.substring(amountIndex + 13);
 };
 
+// Route untuk membuat QRIS dan QR Code
 app.get('/api/create', async (req, res) => {
   try {
-    const { amount, qrisCode } = req.query;
+    let { amount, qrisCode } = req.query;
+
+    // Ganti % dengan spasi
+    if (amount) {
+      amount = replacePercentWithSpace(amount);
+    }
+
+    if (qrisCode) {
+      qrisCode = replacePercentWithSpace(qrisCode);
+    }
     
     if (!amount || !qrisCode) {
       return res.status(400).json({
@@ -64,16 +78,12 @@ app.get('/api/create', async (req, res) => {
       });
     }
 
-    // Generate dynamic QRIS
     const dynamicQRIS = updateQRISAmount(qrisCode, numericAmount);
     
-    // Generate QR code as base64
     const qrBase64 = await QRCode.toDataURL(dynamicQRIS);
     
-    // Generate unique ID for this QR code
     const qrId = Date.now().toString(36) + Math.random().toString(36).substr(2);
     
-    // Store QR code with 5-minute expiration
     const expiresAt = Date.now() + (5 * 60 * 1000); // 5 minutes
     qrStorage.set(qrId, {
       data: qrBase64,
@@ -89,7 +99,7 @@ app.get('/api/create', async (req, res) => {
         amount: numericAmount,
         formatted_amount: formatIDR(numericAmount).replace('Rp\u00a0', 'Rp '),
         generated_at: formatIndonesianDateTime(now),
-        download_url: `/api/download/${qrId}`
+        download_url: `http://localhost:${port}/api/download/${qrId}` // URL untuk download
       }
     });
   } catch (error) {
@@ -101,6 +111,7 @@ app.get('/api/create', async (req, res) => {
   }
 });
 
+// Route untuk mendownload QR Code
 app.get('/api/download/:id', (req, res) => {
   const { id } = req.params;
   const qrData = qrStorage.get(id);
@@ -112,7 +123,6 @@ app.get('/api/download/:id', (req, res) => {
     });
   }
 
-  // Extract base64 data (remove data:image/png;base64, prefix)
   const base64Data = qrData.data.replace(/^data:image\/png;base64,/, '');
   const imageBuffer = Buffer.from(base64Data, 'base64');
 
@@ -121,6 +131,7 @@ app.get('/api/download/:id', (req, res) => {
   res.send(imageBuffer);
 });
 
+// Mulai server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
