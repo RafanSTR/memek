@@ -1,7 +1,7 @@
 const express = require('express');
 const moment = require('moment-timezone');
 const QRCode = require('qrcode');
-app.set('json spaces', 2)
+
 // Fungsi untuk menghitung CRC16
 function charCodeAt(str, i) {
   return str.charCodeAt(i);
